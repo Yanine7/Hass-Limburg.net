@@ -40,13 +40,6 @@ Limburg.net is a registered trademark of its respective owner.
 
 ---
 
-## Development
-
-This integration follows Home Assistant best practices:
-- DataUpdateCoordinator-based architecture
-- Sensor platform only
-- Fully local data handling
-
 Contributions and suggestions are welcome.
 
 ---
