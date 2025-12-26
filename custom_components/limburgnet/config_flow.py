@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import voluptuous as vol
@@ -9,6 +10,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
+
+_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     CONF_CSV_CONTENT,
@@ -94,26 +97,42 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_CSV_CONTENT] = "required"
             else:
                 try:
-                    # Read the uploaded CSV file
-                    path = Path(file_path)
-                    csv_content = await self.hass.async_add_executor_job(
-                        lambda: path.read_text(encoding="utf-8")
-                    )
-                    csv_content = csv_content.strip()
-
-                    if not csv_content:
-                        errors[CONF_CSV_CONTENT] = "empty_file"
+                    # FileSelector returns a path relative to config/www/ or absolute path
+                    # Try to resolve it relative to config directory first
+                    if not Path(file_path).is_absolute():
+                        # Try www directory first (common for uploads)
+                        www_path = Path(self.hass.config.path("www", file_path))
+                        if www_path.exists():
+                            path = www_path
+                        else:
+                            # Try config directory
+                            path = Path(self.hass.config.path(file_path))
                     else:
-                        data = {
-                            CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
-                            CONF_CSV_CONTENT: csv_content,
-                        }
-                        return self.async_create_entry(
-                            title="Limburg.net waste pickup", data=data
+                        path = Path(file_path)
+                    
+                    # Check if file exists
+                    if not path.exists():
+                        errors[CONF_CSV_CONTENT] = "file_not_found"
+                    else:
+                        csv_content = await self.hass.async_add_executor_job(
+                            lambda: path.read_text(encoding="utf-8")
                         )
+                        csv_content = csv_content.strip()
+
+                        if not csv_content:
+                            errors[CONF_CSV_CONTENT] = "empty_file"
+                        else:
+                            data = {
+                                CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                                CONF_CSV_CONTENT: csv_content,
+                            }
+                            return self.async_create_entry(
+                                title="Limburg.net waste pickup", data=data
+                            )
                 except FileNotFoundError:
                     errors[CONF_CSV_CONTENT] = "file_not_found"
                 except Exception as err:
+                    _LOGGER.exception("Error reading uploaded CSV file: %s", err)
                     errors[CONF_CSV_CONTENT] = "read_error"
 
         data_schema = {
