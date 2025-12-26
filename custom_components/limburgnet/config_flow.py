@@ -28,7 +28,7 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            source_type = user_input[CONF_SOURCE_TYPE]
+            source_type = user_input.get(CONF_SOURCE_TYPE)
 
             if source_type == SOURCE_TYPE_URL:
                 return await self.async_step_url()
@@ -81,6 +81,9 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             csv_content = user_input.get(CONF_CSV_CONTENT, "")
 
             # File selector can return different shapes; normalize to string.
+            if isinstance(csv_content, list) and csv_content:
+                csv_content = csv_content[0]
+
             if isinstance(csv_content, dict):
                 if "content" in csv_content:
                     csv_content = csv_content["content"]
