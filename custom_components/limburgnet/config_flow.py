@@ -85,16 +85,32 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             file_path = user_input.get(CONF_CSV_CONTENT)
+            _LOGGER.debug("Raw file_path from user_input: %s (type: %s)", file_path, type(file_path))
 
             # File selector returns a list with file path
             if isinstance(file_path, list) and file_path:
                 file_path = file_path[0]
+                _LOGGER.debug("Extracted from list: %s", file_path)
             elif isinstance(file_path, str):
-                pass
+                _LOGGER.debug("file_path is string: %s", file_path)
+            elif isinstance(file_path, dict):
+                _LOGGER.debug("file_path is dict: %s", file_path)
+                # FileSelector might return a dict with file info
+                if "file" in file_path:
+                    file_path = file_path["file"]
+                elif "path" in file_path:
+                    file_path = file_path["path"]
+                elif "content" in file_path:
+                    file_path = file_path["content"]
+                else:
+                    _LOGGER.warning("Unexpected dict structure: %s", file_path)
+                    file_path = None
             else:
+                _LOGGER.warning("Unexpected file_path type: %s", type(file_path))
                 file_path = None
 
             if not file_path:
+                _LOGGER.error("No file_path after processing. Original: %s", user_input.get(CONF_CSV_CONTENT))
                 errors[CONF_CSV_CONTENT] = "required"
             else:
                 try:
@@ -196,12 +212,21 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 )
                         else:
                             # Log all attempted paths for debugging
-                            _LOGGER.error(
-                                "File not found. Original path: %s, Resolved path: %s, Tried %d locations",
-                                file_path,
-                                path,
-                                len(possible_paths) if isinstance(file_path, str) else 0,
-                            )
+                            if isinstance(file_path, str) and possible_paths:
+                                _LOGGER.error(
+                                    "File not found. Original path: %s, Resolved path: %s, Tried %d locations: %s",
+                                    file_path,
+                                    path,
+                                    len(possible_paths),
+                                    [str(p) for p in possible_paths[:5]],  # Show first 5 paths
+                                )
+                            else:
+                                _LOGGER.error(
+                                    "File not found. file_path: %s (type: %s), path: %s",
+                                    file_path,
+                                    type(file_path),
+                                    path,
+                                )
                             errors[CONF_CSV_CONTENT] = "file_not_found"
                 except FileNotFoundError as err:
                     _LOGGER.exception("FileNotFoundError: %s", err)
