@@ -175,10 +175,17 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if not path or not path.exists():
                             # Try multiple HTTP endpoints
                             clean_path = file_path.lstrip("/")
+                            # Get Home Assistant base URL
+                            base_url = self.hass.config.api.base_url or "http://127.0.0.1:8123"
+                            if not base_url.startswith("http"):
+                                base_url = f"http://{base_url}"
+                            
                             http_urls = [
+                                f"{base_url}/local/{clean_path}",
+                                f"{base_url}/local/uploads/{clean_path}",
+                                f"{base_url}/api/file_upload/{clean_path}",
                                 f"http://127.0.0.1:8123/local/{clean_path}",
                                 f"http://127.0.0.1:8123/local/uploads/{clean_path}",
-                                f"http://127.0.0.1:8123/api/file_upload/{clean_path}",
                             ]
                             
                             session = async_get_clientsession(self.hass)
@@ -203,6 +210,37 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                             _LOGGER.debug("HTTP request returned status %s for %s", resp.status, local_url)
                                 except Exception as http_err:
                                     _LOGGER.debug("HTTP read failed for %s: %s", local_url, http_err)
+                            
+                            # Try reading via Home Assistant file service API
+                            try:
+                                file_service_url = f"{base_url}/api/file_upload"
+                                _LOGGER.debug("Trying to read file via file service API: %s", file_service_url)
+                                # FileSelector might store files in a special location accessible via API
+                                # Try to read the file using the hash as identifier
+                                async with session.post(
+                                    file_service_url,
+                                    json={"file_id": clean_path},
+                                    timeout=5
+                                ) as resp:
+                                    if resp.status == 200:
+                                        result = await resp.json()
+                                        if "content" in result:
+                                            csv_content = result["content"]
+                                            if isinstance(csv_content, bytes):
+                                                csv_content = csv_content.decode("utf-8")
+                                            csv_content = csv_content.strip()
+                                            if csv_content:
+                                                _LOGGER.info("Successfully read file via file service API")
+                                                http_success = True
+                                                data = {
+                                                    CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                                                    CONF_CSV_CONTENT: csv_content,
+                                                }
+                                                return self.async_create_entry(
+                                                    title="Limburg.net waste pickup", data=data
+                                                )
+                            except Exception as api_err:
+                                _LOGGER.debug("File service API read failed: %s", api_err)
                             
                             # Also try reading from Home Assistant's internal file storage
                             # Files might be in a temp directory or need to be accessed differently
