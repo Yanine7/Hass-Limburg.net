@@ -97,23 +97,38 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_CSV_CONTENT] = "required"
             else:
                 try:
-                    # FileSelector returns a path relative to config/www/ or absolute path
-                    # Try to resolve it relative to config directory first
-                    if not Path(file_path).is_absolute():
-                        # Try www directory first (common for uploads)
-                        www_path = Path(self.hass.config.path("www", file_path))
-                        if www_path.exists():
-                            path = www_path
-                        else:
-                            # Try config directory
-                            path = Path(self.hass.config.path(file_path))
-                    else:
-                        path = Path(file_path)
+                    _LOGGER.debug("FileSelector returned path: %s (type: %s)", file_path, type(file_path))
                     
-                    # Check if file exists
-                    if not path.exists():
-                        errors[CONF_CSV_CONTENT] = "file_not_found"
+                    # FileSelector returns a path that may start with /local/ (www directory)
+                    # or be a relative/absolute path
+                    if isinstance(file_path, str):
+                        # Remove /local/ prefix if present (points to www directory)
+                        if file_path.startswith("/local/"):
+                            file_path = file_path[7:]  # Remove "/local/" prefix
+                        
+                        # Resolve path relative to www directory (where uploads go)
+                        if not Path(file_path).is_absolute():
+                            # Try www directory first (where FileSelector uploads files)
+                            www_path = Path(self.hass.config.path("www", file_path))
+                            if www_path.exists():
+                                path = www_path
+                            else:
+                                # Try as absolute path
+                                abs_path = Path(file_path)
+                                if abs_path.exists():
+                                    path = abs_path
+                                else:
+                                    # Try config directory as last resort
+                                    path = Path(self.hass.config.path(file_path))
+                        else:
+                            path = Path(file_path)
                     else:
+                        _LOGGER.error("Unexpected file_path type: %s", type(file_path))
+                        errors[CONF_CSV_CONTENT] = "read_error"
+                        path = None
+                    
+                    if path and path.exists():
+                        _LOGGER.debug("Reading CSV file from: %s", path)
                         csv_content = await self.hass.async_add_executor_job(
                             lambda: path.read_text(encoding="utf-8")
                         )
@@ -129,7 +144,11 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             return self.async_create_entry(
                                 title="Limburg.net waste pickup", data=data
                             )
-                except FileNotFoundError:
+                    else:
+                        _LOGGER.error("File not found. Tried path: %s", path)
+                        errors[CONF_CSV_CONTENT] = "file_not_found"
+                except FileNotFoundError as err:
+                    _LOGGER.exception("FileNotFoundError: %s", err)
                     errors[CONF_CSV_CONTENT] = "file_not_found"
                 except Exception as err:
                     _LOGGER.exception("Error reading uploaded CSV file: %s", err)
