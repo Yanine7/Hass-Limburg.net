@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -78,39 +80,45 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            csv_content = user_input.get(CONF_CSV_CONTENT, "")
+            file_path = user_input.get(CONF_CSV_CONTENT)
 
-            # File selector can return different shapes; normalize to string.
-            if isinstance(csv_content, list) and csv_content:
-                csv_content = csv_content[0]
+            # File selector returns a list with file path
+            if isinstance(file_path, list) and file_path:
+                file_path = file_path[0]
+            elif isinstance(file_path, str):
+                pass
+            else:
+                file_path = None
 
-            if isinstance(csv_content, dict):
-                if "content" in csv_content:
-                    csv_content = csv_content["content"]
-                elif "file" in csv_content and isinstance(csv_content["file"], dict):
-                    csv_content = csv_content["file"].get("content", "")
-
-            if isinstance(csv_content, bytes):
-                csv_content = csv_content.decode("utf-8")
-            elif not isinstance(csv_content, str):
-                csv_content = str(csv_content)
-
-            csv_content = (csv_content or "").strip()
-
-            if not csv_content:
+            if not file_path:
                 errors[CONF_CSV_CONTENT] = "required"
             else:
-                data = {
-                    CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
-                    CONF_CSV_CONTENT: csv_content,
-                }
-                return self.async_create_entry(
-                    title="Limburg.net waste pickup", data=data
-                )
+                try:
+                    # Read the uploaded CSV file
+                    path = Path(file_path)
+                    csv_content = await self.hass.async_add_executor_job(
+                        lambda: path.read_text(encoding="utf-8")
+                    )
+                    csv_content = csv_content.strip()
+
+                    if not csv_content:
+                        errors[CONF_CSV_CONTENT] = "empty_file"
+                    else:
+                        data = {
+                            CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                            CONF_CSV_CONTENT: csv_content,
+                        }
+                        return self.async_create_entry(
+                            title="Limburg.net waste pickup", data=data
+                        )
+                except FileNotFoundError:
+                    errors[CONF_CSV_CONTENT] = "file_not_found"
+                except Exception as err:
+                    errors[CONF_CSV_CONTENT] = "read_error"
 
         data_schema = {
-            vol.Required(CONF_CSV_CONTENT): selector.selector(
-                {"text": {"multiline": True}}
+            vol.Required(CONF_CSV_CONTENT): selector.FileSelector(
+                selector.FileSelectorConfig(accept=".csv,text/csv")
             ),
         }
         return self.async_show_form(

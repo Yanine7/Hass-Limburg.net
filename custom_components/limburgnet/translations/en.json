@@ -17,14 +17,18 @@
       },
       "upload": {
         "title": "Upload CSV",
-        "description": "Paste the Limburg.net CSV export content.",
+        "description": "Upload a Limburg.net CSV export file.",
         "data": {
-          "csv_content": "CSV content"
+          "csv_content": "CSV file"
         }
       }
     },
     "error": {
-      "invalid_source_type": "Invalid source type"
+      "invalid_source_type": "Invalid source type",
+      "required": "This field is required",
+      "empty_file": "The uploaded file is empty",
+      "file_not_found": "The uploaded file could not be found",
+      "read_error": "Error reading the uploaded file"
     },
     "abort": {}
   }
