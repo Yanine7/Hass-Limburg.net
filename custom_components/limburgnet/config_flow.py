@@ -95,13 +95,25 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("file_path is string: %s", file_path)
             elif isinstance(file_path, dict):
                 _LOGGER.debug("file_path is dict: %s", file_path)
-                # FileSelector might return a dict with file info
+                # FileSelector might return a dict with file info or content
+                if "content" in file_path:
+                    # Direct content available
+                    content = file_path["content"]
+                    if isinstance(content, bytes):
+                        content = content.decode("utf-8")
+                    if isinstance(content, str) and content.strip():
+                        _LOGGER.info("Found file content directly in dict")
+                        data = {
+                            CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                            CONF_CSV_CONTENT: content.strip(),
+                        }
+                        return self.async_create_entry(
+                            title="Limburg.net waste pickup", data=data
+                        )
                 if "file" in file_path:
                     file_path = file_path["file"]
                 elif "path" in file_path:
                     file_path = file_path["path"]
-                elif "content" in file_path:
-                    file_path = file_path["content"]
                 else:
                     _LOGGER.warning("Unexpected dict structure: %s", file_path)
                     file_path = None
@@ -161,31 +173,52 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         # If not found, try reading via HTTP (for files in www directory)
                         http_success = False
                         if not path or not path.exists():
-                            # Try /local/ URL (www directory accessible via HTTP)
+                            # Try multiple HTTP endpoints
                             clean_path = file_path.lstrip("/")
-                            local_url = f"http://127.0.0.1:8123/local/{clean_path}"
+                            http_urls = [
+                                f"http://127.0.0.1:8123/local/{clean_path}",
+                                f"http://127.0.0.1:8123/local/uploads/{clean_path}",
+                                f"http://127.0.0.1:8123/api/file_upload/{clean_path}",
+                            ]
                             
+                            session = async_get_clientsession(self.hass)
+                            for local_url in http_urls:
+                                try:
+                                    _LOGGER.debug("Trying to read file via HTTP: %s", local_url)
+                                    async with session.get(local_url, timeout=5) as resp:
+                                        if resp.status == 200:
+                                            csv_content = await resp.text()
+                                            csv_content = csv_content.strip()
+                                            if csv_content:
+                                                _LOGGER.info("Successfully read file via HTTP: %s", local_url)
+                                                http_success = True
+                                                data = {
+                                                    CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                                                    CONF_CSV_CONTENT: csv_content,
+                                                }
+                                                return self.async_create_entry(
+                                                    title="Limburg.net waste pickup", data=data
+                                                )
+                                        else:
+                                            _LOGGER.debug("HTTP request returned status %s for %s", resp.status, local_url)
+                                except Exception as http_err:
+                                    _LOGGER.debug("HTTP read failed for %s: %s", local_url, http_err)
+                            
+                            # Also try reading from Home Assistant's internal file storage
+                            # Files might be in a temp directory or need to be accessed differently
                             try:
-                                _LOGGER.debug("Trying to read file via HTTP: %s", local_url)
-                                session = async_get_clientsession(self.hass)
-                                async with session.get(local_url, timeout=5) as resp:
-                                    if resp.status == 200:
-                                        csv_content = await resp.text()
-                                        csv_content = csv_content.strip()
-                                        if csv_content:
-                                            _LOGGER.info("Successfully read file via HTTP")
-                                            http_success = True
-                                            data = {
-                                                CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
-                                                CONF_CSV_CONTENT: csv_content,
-                                            }
-                                            return self.async_create_entry(
-                                                title="Limburg.net waste pickup", data=data
-                                            )
-                                    else:
-                                        _LOGGER.debug("HTTP request returned status: %s", resp.status)
-                            except Exception as http_err:
-                                _LOGGER.debug("HTTP read failed: %s", http_err)
+                                # Try to read via hass.config.path with different base directories
+                                temp_paths = [
+                                    Path(self.hass.config.path("tmp", file_path)),
+                                    Path(self.hass.config.path("tmp", "uploads", file_path)),
+                                ]
+                                for temp_path in temp_paths:
+                                    if temp_path.exists() and temp_path.is_file():
+                                        _LOGGER.info("Found file in temp directory: %s", temp_path)
+                                        path = temp_path
+                                        break
+                            except Exception as temp_err:
+                                _LOGGER.debug("Temp directory search failed: %s", temp_err)
                     else:
                         _LOGGER.error("Unexpected file_path type: %s", type(file_path))
                         errors[CONF_CSV_CONTENT] = "read_error"
