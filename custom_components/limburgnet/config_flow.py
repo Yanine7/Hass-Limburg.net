@@ -92,6 +92,10 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if isinstance(csv_content, bytes):
                 csv_content = csv_content.decode("utf-8")
+            elif not isinstance(csv_content, str):
+                csv_content = str(csv_content)
+
+            csv_content = (csv_content or "").strip()
 
             if not csv_content:
                 errors[CONF_CSV_CONTENT] = "required"
@@ -105,7 +109,9 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
         data_schema = {
-            vol.Required(CONF_CSV_CONTENT): selector.selector({"file": {}}),
+            vol.Required(CONF_CSV_CONTENT): selector.selector(
+                {"text": {"multiline": True}}
+            ),
         }
         return self.async_show_form(
             step_id="upload",
