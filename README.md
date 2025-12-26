@@ -1,6 +1,5 @@
 # Limburg.net Home Assistant Integration
 
-<<<<<<< HEAD
 Custom Home Assistant integration that reads Limburg.net CSV exports for waste pickup schedules and exposes sensors.
 
 ## Features
