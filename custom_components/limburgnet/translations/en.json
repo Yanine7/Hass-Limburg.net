@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Limburg.net",
+        "description": "Choose how you want to provide the Limburg.net CSV data.",
+        "data": {
+          "source_type": "Source"
+        }
+      },
+      "url": {
+        "title": "Limburg.net URL",
+        "description": "Provide a CSV URL (http/https) or a local file path.",
+        "data": {
+          "source_url": "CSV URL or local file path"
+        }
+      },
+      "upload": {
+        "title": "Upload CSV",
+        "description": "Upload a Limburg.net CSV export.",
+        "data": {
+          "csv_content": "CSV file"
+        }
+      }
+    },
+    "error": {
+      "invalid_source_type": "Invalid source type"
+    },
+    "abort": {}
+  }
+}

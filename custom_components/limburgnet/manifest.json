@@ -1,0 +1,14 @@
+{
+  "domain": "limburgnet",
+  "name": "Limburg.net",
+  "version": "0.0.1",
+  "documentation": "https://www.home-assistant.io/integrations/",
+  "integration_type": "hub",
+  "dependencies": [],
+  "requirements": [],
+  "codeowners": [
+    "@your-github-username"
+  ],
+  "config_flow": true,
+  "iot_class": "cloud_polling"
+}
