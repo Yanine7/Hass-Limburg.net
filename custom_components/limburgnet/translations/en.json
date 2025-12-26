@@ -17,9 +17,9 @@
       },
       "upload": {
         "title": "Upload CSV",
-        "description": "Upload a Limburg.net CSV export file.",
+        "description": "Paste the CSV content from your Limburg.net export.",
         "data": {
-          "csv_content": "CSV file"
+          "csv_content": "CSV content"
         }
       }
     },
