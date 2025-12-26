@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,33 +100,77 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     _LOGGER.debug("FileSelector returned path: %s (type: %s)", file_path, type(file_path))
                     
-                    # FileSelector returns a path that may start with /local/ (www directory)
-                    # or be a relative/absolute path
+                    # FileSelector returns a path that may be a hash ID or file path
+                    # Files are typically stored in www directory
+                    path = None
                     if isinstance(file_path, str):
                         # Remove /local/ prefix if present (points to www directory)
                         if file_path.startswith("/local/"):
                             file_path = file_path[7:]  # Remove "/local/" prefix
                         
-                        # Resolve path relative to www directory (where uploads go)
-                        if not Path(file_path).is_absolute():
-                            # Try www directory first (where FileSelector uploads files)
-                            www_path = Path(self.hass.config.path("www", file_path))
-                            if www_path.exists():
-                                path = www_path
-                            else:
-                                # Try as absolute path
-                                abs_path = Path(file_path)
-                                if abs_path.exists():
-                                    path = abs_path
-                                else:
-                                    # Try config directory as last resort
-                                    path = Path(self.hass.config.path(file_path))
+                        # Try multiple locations where uploaded files might be stored
+                        possible_paths = []
+                        
+                        if Path(file_path).is_absolute():
+                            possible_paths.append(Path(file_path))
                         else:
-                            path = Path(file_path)
+                            # Try www directory (most common for uploads)
+                            www_base = Path(self.hass.config.path("www"))
+                            possible_paths.append(www_base / file_path)
+                            # Try www/uploads subdirectory
+                            possible_paths.append(www_base / "uploads" / file_path)
+                            # Try config directory
+                            possible_paths.append(Path(self.hass.config.path(file_path)))
+                            # Try as absolute path
+                            possible_paths.append(Path(file_path))
+                            
+                            # Also search recursively in www directory for files with matching name/hash
+                            if www_base.exists():
+                                try:
+                                    for found_file in www_base.rglob(file_path):
+                                        if found_file.is_file():
+                                            possible_paths.append(found_file)
+                                            _LOGGER.debug("Found potential file via recursive search: %s", found_file)
+                                except Exception as search_err:
+                                    _LOGGER.debug("Recursive search failed: %s", search_err)
+                        
+                        # Find the first existing path
+                        for test_path in possible_paths:
+                            _LOGGER.debug("Checking if file exists at: %s", test_path)
+                            if test_path.exists() and test_path.is_file():
+                                path = test_path
+                                _LOGGER.info("Found file at: %s", path)
+                                break
+                        
+                        # If not found, try reading via HTTP (for files in www directory)
+                        if not path or not path.exists():
+                            # Try /local/ URL (www directory accessible via HTTP)
+                            clean_path = file_path.lstrip("/")
+                            local_url = f"http://127.0.0.1:8123/local/{clean_path}"
+                            
+                            try:
+                                _LOGGER.debug("Trying to read file via HTTP: %s", local_url)
+                                session = async_get_clientsession(self.hass)
+                                async with session.get(local_url, timeout=5) as resp:
+                                    if resp.status == 200:
+                                        csv_content = await resp.text()
+                                        csv_content = csv_content.strip()
+                                        if csv_content:
+                                            _LOGGER.info("Successfully read file via HTTP")
+                                            data = {
+                                                CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                                                CONF_CSV_CONTENT: csv_content,
+                                            }
+                                            return self.async_create_entry(
+                                                title="Limburg.net waste pickup", data=data
+                                            )
+                                    else:
+                                        _LOGGER.debug("HTTP request returned status: %s", resp.status)
+                            except Exception as http_err:
+                                _LOGGER.debug("HTTP read failed: %s", http_err)
                     else:
                         _LOGGER.error("Unexpected file_path type: %s", type(file_path))
                         errors[CONF_CSV_CONTENT] = "read_error"
-                        path = None
                     
                     if path and path.exists():
                         _LOGGER.debug("Reading CSV file from: %s", path)
