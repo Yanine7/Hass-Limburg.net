@@ -103,13 +103,13 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # FileSelector returns a path that may be a hash ID or file path
                     # Files are typically stored in www directory
                     path = None
+                    possible_paths = []
                     if isinstance(file_path, str):
                         # Remove /local/ prefix if present (points to www directory)
                         if file_path.startswith("/local/"):
                             file_path = file_path[7:]  # Remove "/local/" prefix
                         
                         # Try multiple locations where uploaded files might be stored
-                        possible_paths = []
                         
                         if Path(file_path).is_absolute():
                             possible_paths.append(Path(file_path))
@@ -143,6 +143,7 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 break
                         
                         # If not found, try reading via HTTP (for files in www directory)
+                        http_success = False
                         if not path or not path.exists():
                             # Try /local/ URL (www directory accessible via HTTP)
                             clean_path = file_path.lstrip("/")
@@ -157,6 +158,7 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                         csv_content = csv_content.strip()
                                         if csv_content:
                                             _LOGGER.info("Successfully read file via HTTP")
+                                            http_success = True
                                             data = {
                                                 CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
                                                 CONF_CSV_CONTENT: csv_content,
@@ -171,27 +173,36 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         _LOGGER.error("Unexpected file_path type: %s", type(file_path))
                         errors[CONF_CSV_CONTENT] = "read_error"
+                        path = None
                     
-                    if path and path.exists():
-                        _LOGGER.debug("Reading CSV file from: %s", path)
-                        csv_content = await self.hass.async_add_executor_job(
-                            lambda: path.read_text(encoding="utf-8")
-                        )
-                        csv_content = csv_content.strip()
-
-                        if not csv_content:
-                            errors[CONF_CSV_CONTENT] = "empty_file"
-                        else:
-                            data = {
-                                CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
-                                CONF_CSV_CONTENT: csv_content,
-                            }
-                            return self.async_create_entry(
-                                title="Limburg.net waste pickup", data=data
+                    # Only try file reading if HTTP didn't succeed and we have a path
+                    if not http_success:
+                        if path and path.exists():
+                            _LOGGER.debug("Reading CSV file from: %s", path)
+                            csv_content = await self.hass.async_add_executor_job(
+                                lambda: path.read_text(encoding="utf-8")
                             )
-                    else:
-                        _LOGGER.error("File not found. Tried path: %s", path)
-                        errors[CONF_CSV_CONTENT] = "file_not_found"
+                            csv_content = csv_content.strip()
+
+                            if not csv_content:
+                                errors[CONF_CSV_CONTENT] = "empty_file"
+                            else:
+                                data = {
+                                    CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                                    CONF_CSV_CONTENT: csv_content,
+                                }
+                                return self.async_create_entry(
+                                    title="Limburg.net waste pickup", data=data
+                                )
+                        else:
+                            # Log all attempted paths for debugging
+                            _LOGGER.error(
+                                "File not found. Original path: %s, Resolved path: %s, Tried %d locations",
+                                file_path,
+                                path,
+                                len(possible_paths) if isinstance(file_path, str) else 0,
+                            )
+                            errors[CONF_CSV_CONTENT] = "file_not_found"
                 except FileNotFoundError as err:
                     _LOGGER.exception("FileNotFoundError: %s", err)
                     errors[CONF_CSV_CONTENT] = "file_not_found"
