@@ -16,11 +16,12 @@ SOURCE_TYPE_UPLOAD = "upload"
 DEFAULT_SCAN_INTERVAL = timedelta(hours=12)
 
 # Supported waste types as defined by Limburg.net CSV export.
+# Note: These must match exactly (case-sensitive) with the CSV values
 WASTE_TYPES = {
     "Huisvuil",
     "Tuinafval",
     "Keukenafval",
     "Textiel",
-    "PMD",
-    "Papier & Karton",
+    "Pmd",
+    "Papier & karton",
 }
