@@ -87,7 +87,11 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     # Use Home Assistant's file upload API to read the file
                     with process_uploaded_file(self.hass, uploaded_file_id) as file_path:
-                        csv_content = file_path.read_text(encoding="utf-8").strip()
+                        # Read file in executor to avoid blocking
+                        csv_content = await self.hass.async_add_executor_job(
+                            file_path.read_text, "utf-8"
+                        )
+                        csv_content = csv_content.strip()
 
                     if not csv_content:
                         errors[CONF_CSV_CONTENT] = "empty_file"
