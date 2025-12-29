@@ -99,11 +99,13 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         CSV columns: Datum, Ophaling, Verwijderd, Reden.
         """
         if self._source_type == SOURCE_TYPE_UPLOAD:
-            _LOGGER.debug("Fetching Limburg.net pickup data from uploaded CSV")
+            _LOGGER.info("Fetching Limburg.net pickup data from uploaded CSV (content length: %d)", len(self._csv_content or ""))
         else:
-            _LOGGER.debug("Fetching Limburg.net pickup data from %s", self._source_url)
+            _LOGGER.info("Fetching Limburg.net pickup data from %s", self._source_url)
         content = await self._load_csv()
+        _LOGGER.info("Loaded CSV content length: %d", len(content) if content else 0)
         pickups = self._parse_csv(content)
+        _LOGGER.info("Parsed %d total pickups", len(pickups))
 
         today = dt_util.now().date()
         upcoming_pickups = [
@@ -154,7 +156,7 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("CSV content is empty")
             return []
 
-        _LOGGER.debug("CSV content (first 500 chars): %s", content[:500])
+        _LOGGER.info("CSV content (first 500 chars): %s", content[:500])
 
         # Detect delimiter to handle common comma or semicolon separated files.
         try:
@@ -168,7 +170,7 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reader = csv.DictReader(io.StringIO(content), dialect=dialect)
         
         # Log column names
-        _LOGGER.debug("CSV columns: %s", reader.fieldnames)
+        _LOGGER.info("CSV columns: %s", reader.fieldnames)
 
         pickups: list[dict[str, Any]] = []
         row_count = 0
@@ -193,7 +195,7 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
 
-        _LOGGER.info("Parsed %d pickups from %d CSV rows", len(pickups), row_count)
+        _LOGGER.warning("Parsed %d pickups from %d CSV rows", len(pickups), row_count)
         pickups.sort(key=lambda item: item["date_obj"] or date.min)
         return pickups
 
