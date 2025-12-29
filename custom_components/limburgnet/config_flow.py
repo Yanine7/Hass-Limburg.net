@@ -5,6 +5,7 @@ from __future__ import annotations
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
@@ -78,40 +79,32 @@ class LimburgNetConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            csv_content = user_input.get(CONF_CSV_CONTENT, "")
+            uploaded_file_id = user_input.get(CONF_CSV_CONTENT)
 
-            # Handle different input types
-            if isinstance(csv_content, list) and csv_content:
-                csv_content = csv_content[0]
-            elif isinstance(csv_content, dict):
-                if "content" in csv_content:
-                    csv_content = csv_content["content"]
-                elif "file" in csv_content:
-                    csv_content = csv_content["file"]
-                else:
-                    csv_content = str(csv_content)
-
-            if isinstance(csv_content, bytes):
-                csv_content = csv_content.decode("utf-8")
-            elif not isinstance(csv_content, str):
-                csv_content = str(csv_content)
-
-            csv_content = (csv_content or "").strip()
-
-            if not csv_content:
+            if not uploaded_file_id:
                 errors[CONF_CSV_CONTENT] = "required"
             else:
-                data = {
-                    CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
-                    CONF_CSV_CONTENT: csv_content,
-                }
-                return self.async_create_entry(
-                    title="Limburg.net waste pickup", data=data
-                )
+                try:
+                    # Use Home Assistant's file upload API to read the file
+                    with process_uploaded_file(self.hass, uploaded_file_id) as file_path:
+                        csv_content = file_path.read_text(encoding="utf-8").strip()
+
+                    if not csv_content:
+                        errors[CONF_CSV_CONTENT] = "empty_file"
+                    else:
+                        data = {
+                            CONF_SOURCE_TYPE: SOURCE_TYPE_UPLOAD,
+                            CONF_CSV_CONTENT: csv_content,
+                        }
+                        return self.async_create_entry(
+                            title="Limburg.net waste pickup", data=data
+                        )
+                except Exception:
+                    errors[CONF_CSV_CONTENT] = "read_error"
 
         data_schema = {
-            vol.Required(CONF_CSV_CONTENT): selector.selector(
-                {"text": {"multiline": True, "suffix": "Plak hier de CSV-inhoud van Limburg.net"}}
+            vol.Required(CONF_CSV_CONTENT): selector.FileSelector(
+                selector.FileSelectorConfig(accept=".csv,text/csv")
             ),
         }
         return self.async_show_form(
