@@ -151,25 +151,38 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _parse_csv(self, content: str) -> list[dict[str, Any]]:
         """Parse Limburg.net CSV content into structured pickups."""
         if not content:
+            _LOGGER.warning("CSV content is empty")
             return []
+
+        _LOGGER.debug("CSV content (first 500 chars): %s", content[:500])
 
         # Detect delimiter to handle common comma or semicolon separated files.
         try:
             dialect = csv.Sniffer().sniff(content.splitlines()[0])
+            _LOGGER.debug("Detected CSV delimiter: %s", repr(dialect.delimiter))
         except csv.Error:
             dialect = csv.excel
             dialect.delimiter = ";"
+            _LOGGER.debug("Using default delimiter: ;")
 
         reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+        
+        # Log column names
+        _LOGGER.debug("CSV columns: %s", reader.fieldnames)
 
         pickups: list[dict[str, Any]] = []
+        row_count = 0
         for row in reader:
+            row_count += 1
+            if row_count <= 3:
+                _LOGGER.debug("CSV row %d: %s", row_count, row)
+            
             date_str = row.get("Datum") or ""
             waste_type = (row.get("Ophaling") or "").strip()
             date_obj = _parse_date(date_str)
 
             if waste_type not in WASTE_TYPES:
-                _LOGGER.debug("Skipping unknown waste type: %s", waste_type)
+                _LOGGER.debug("Skipping unknown waste type: %s (row: %s)", waste_type, row)
                 continue
 
             pickups.append(
@@ -180,6 +193,7 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
 
+        _LOGGER.info("Parsed %d pickups from %d CSV rows", len(pickups), row_count)
         pickups.sort(key=lambda item: item["date_obj"] or date.min)
         return pickups
 
