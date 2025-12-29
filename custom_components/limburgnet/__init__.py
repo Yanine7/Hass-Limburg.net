@@ -106,16 +106,26 @@ class LimburgNetCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.info("Loaded CSV content length: %d", len(content) if content else 0)
         pickups = self._parse_csv(content)
         _LOGGER.info("Parsed %d total pickups", len(pickups))
+        
+        # Log first few pickups for debugging
+        for i, p in enumerate(pickups[:3]):
+            _LOGGER.info("Pickup %d: date=%s, type=%s", i, p.get("date"), p.get("waste_type"))
 
         today = dt_util.now().date()
+        _LOGGER.info("Today is: %s", today)
+        
         upcoming_pickups = [
             item for item in pickups if item.get("date_obj") and item["date_obj"] >= today
         ]
+        _LOGGER.info("Found %d upcoming pickups (after %s)", len(upcoming_pickups), today)
+        
         next_pickup = (
             min(upcoming_pickups, key=lambda item: item["date_obj"])
             if upcoming_pickups
             else None
         )
+        if next_pickup:
+            _LOGGER.info("Next pickup: %s - %s", next_pickup.get("date"), next_pickup.get("waste_type"))
 
         return {
             "source_url": self._source_url,
